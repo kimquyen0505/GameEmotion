@@ -260,6 +260,7 @@
             gameLoop();
         }
 
+        
         // Cập nhật AI liên tục
         setInterval(() => {
             fetch('/get_emotion').then(r => r.json()).then(d => {
