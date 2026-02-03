@@ -65,28 +65,26 @@
 
     <script>
         // --- 1. CẤU HÌNH ÂM THANH TÙY CHỈNH ---
-        // Load các file nhạc từ thư mục static/sounds
+        // Load các file nhạc từ thư mục assets
         const sounds = {
-            bgm: new Audio("{{ url_for('assets', filename='beat.wav') }}"),
+            bgm: new Audio("{{ url_for('assets', filename='bgm.wav') }}"),
             beat: new Audio("{{ url_for('assets', filename='beat.wav') }}"),
-            correct: new Audio("{{ url_for('assets', filename='success.wav') }}"),
-            wrong: new Audio("{{ url_for('assets', filename='fail.wav') }}"),
-            tick: new Audio("{{ url_for('assets', filename='beat.wav') }}"), // Tiếng nhịp phụ (tùy chọn)
-            // Generated cheerful music (auto-created by server on startup)
-            v_prompt: new Audio("{{ url_for('assets', filename='v_prompt.wav') }}"),
-            v_correct: new Audio("{{ url_for('assets', filename='v_correct.wav') }}"),
-            v_wrong: new Audio("{{ url_for('assets', filename='v_wrong.wav') }}"),
-            v_gameover: new Audio("{{ url_for('assets', filename='v_gameover.wav') }}")
+            correct: new Audio("{{ url_for('assets', filename='correct.wav') }}"),
+            wrong: new Audio("{{ url_for('assets', filename='wrong.wav') }}"),
+            success: new Audio("{{ url_for('assets', filename='success.wav') }}"),
+            cue: new Audio("{{ url_for('assets', filename='cue.wav') }}")
         };
 
         // Cấu hình nhạc nền
         sounds.bgm.loop = true; // Tự động lặp lại
-        sounds.bgm.volume = 0.4; // Âm lượng vừa phải (40%)
+        sounds.bgm.volume = 0.35; // Âm lượng nền (35%)
         
         // Tinh chỉnh hiệu ứng
-        sounds.beat.volume = 1.0;
+        sounds.beat.volume = 0.7;
         sounds.correct.volume = 0.8;
-        sounds.wrong.volume = 0.6;
+        sounds.wrong.volume = 0.7;
+        sounds.success.volume = 0.9;
+        sounds.cue.volume = 0.8;
 
         // Hàm phát âm thanh (để không bị lỗi khi bấm nhanh)
         function playSfx(name) {
@@ -109,7 +107,7 @@
             }
         }
 
-        // --- SOUND EFFECTS MODE (no long narration) ---
+        // --- SOUND EFFECTS MODE (uses upbeat game music, no voice) ---
         let soundEnabled = true;
 
         function toggleVoice() {
@@ -129,7 +127,14 @@
 
         function playSfxCue(type) {
             if (!soundEnabled) return;
-            const key = 'v_' + type;
+            // Map cue types to sound effects
+            const soundMap = {
+                'prompt': 'cue',
+                'correct': 'correct',
+                'wrong': 'wrong',
+                'gameover': 'success'
+            };
+            const key = soundMap[type] || type;
             const audio = sounds[key];
             if (audio) {
                 audio.currentTime = 0;

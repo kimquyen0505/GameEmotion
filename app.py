@@ -1,176 +1,130 @@
-from flask import Flask, render_template, Response, jsonify, send_from_directory
+from flask import Flask, render_template, Response, jsonify
 import cv2
+import mediapipe as mp # Import chuẩn
 import numpy as np
+import threading
 import time
-import random
-import os
 from collections import deque, Counter
-
-# --- IMPORT MEDIAPIPE (CÁCH AN TOÀN CHO MAC) ---
-try:
-    import mediapipe as mp
-    # Sử dụng cách gọi trực tiếp qua solutions
-    mp_face_mesh = mp.solutions.face_mesh
-    MEDIAPIPE_AVAILABLE = True
-except Exception as e:
-    print(f"Lỗi khởi tạo MediaPipe: {e}")
-    MEDIAPIPE_AVAILABLE = False
 
 app = Flask(__name__)
 
-# --- 🧠 THUẬT TOÁN AI NHẬN DIỆN CHUẨN (TỈ LỆ HÌNH HỌC) ---
+# --- GLOBAL VARIABLES ---
+outputFrame = None
+current_emotion = "neutral"
+lock = threading.Lock()
+
+# --- AI ENGINE ---
 class EmotionDetector:
     def __init__(self):
-        if MEDIAPIPE_AVAILABLE:
-            self.face_mesh = mp_face_mesh.FaceMesh(
-                max_num_faces=1,
-                refine_landmarks=True, # Lấy chi tiết môi
-                min_detection_confidence=0.5,
-                min_tracking_confidence=0.5
-            )
-        self.history = deque(maxlen=4)
+        # MediaPipe Solutions
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.face_mesh = self.mp_face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        self.history = deque(maxlen=5)
 
-    def predict(self, lms, w, h):
-        def get_pt(idx): return np.array([lms.landmark[idx].x * w, lms.landmark[idx].y * h])
-        
-        # Thước đo chuẩn: Khoảng cách giữa 2 mắt (Inter-ocular distance)
-        # Điểm 33 và 263 là khóe mắt ngoài
-        base_dist = np.linalg.norm(get_pt(33) - get_pt(263))
-        if base_dist == 0: return "neutral"
-
-        # 1. Tỉ lệ há miệng dọc (Mouth Open) - Điểm 13, 14
-        m_h = np.linalg.norm(get_pt(13) - get_pt(14)) / base_dist
-        
-        # 2. Tỉ lệ rộng miệng ngang (Mouth Width) - Điểm 61, 291
-        m_w = np.linalg.norm(get_pt(61) - get_pt(291)) / base_dist
-        
-        # 3. Độ mở mắt (Eye Open) - Điểm 159, 145 và 386, 374
-        eye_l = np.linalg.norm(get_pt(159) - get_pt(145)) / base_dist
-        eye_r = np.linalg.norm(get_pt(386) - get_pt(374)) / base_dist
-        avg_eye = (eye_l + eye_r) / 2
-
-        # 4. Độ nhếch khóe môi (Smile score)
-        # So sánh cao độ y của khóe môi so với môi trên (điểm 0)
-        smile_lift = (get_pt(0)[1] - (get_pt(61)[1] + get_pt(291)[1]) / 2) / base_dist
-
-        # 5. Độ nhướng lông mày
-        brow_lift = np.linalg.norm(get_pt(105) - get_pt(159)) / base_dist
-
-        # --- LOGIC QUYẾT ĐỊNH ---
-        res = "neutral"
-
-        # BẤT NGỜ: Mắt mở to (>0.25) + Lông mày nhướng (>0.2) + Miệng há dọc
-        if avg_eye > 0.26 and brow_lift > 0.22:
-            res = "surprise"
-        
-        # LÈ LƯỠI: Khi lưỡi thò ra, miệng há dọc cực đại (>0.45)
-        elif m_h > 0.48:
-            res = "tongue_out"
-            
-        # VUI VẺ: Khóe môi nhếch lên cao (>0.06) hoặc miệng mở rất rộng ngang
-        elif smile_lift > 0.07 or m_w > 0.95:
-            res = "happy"
-
-        self.history.append(res)
-        return Counter(self.history).most_common(1)[0][0]
-
-class RhythmGame:
-    def __init__(self):
-        self.detector = EmotionDetector()
-        self.score = 0
-        self.combo = 0
-        self.bpm = 80 # Tăng tốc độ game một chút
-        self.start_time = time.time()
-        self.last_beat_int = -1
-        self.curr_target = "neutral"
-        self.next_target = random.choice(["happy", "surprise", "tongue_out"])
-        self.player_emo = "neutral"
-        self.feedback = ""
-        self.feedback_time = 0
-        self.is_hit = False
-
-    def process(self, frame):
+    def predict(self, frame):
         h, w = frame.shape[:2]
-        frame = cv2.flip(frame, 1)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb)
         
-        elapsed = time.time() - self.start_time
-        beat_dur = 60 / self.bpm
-        beat_prog = (elapsed / beat_dur) % 4
-        curr_beat_int = int(elapsed / beat_dur)
+        emotion = "neutral"
+        
+        if results.multi_face_landmarks:
+            lms = results.multi_face_landmarks[0]
+            
+            def dist(i1, i2):
+                p1 = np.array([lms.landmark[i1].x, lms.landmark[i1].y])
+                p2 = np.array([lms.landmark[i2].x, lms.landmark[i2].y])
+                return np.linalg.norm(p1 - p2)
 
-        # Đổi nhịp (Beat Logic)
-        if curr_beat_int > self.last_beat_int:
-            if curr_beat_int % 4 == 0:
-                self.curr_target = self.next_target
-                self.next_target = random.choice(["happy", "surprise", "tongue_out"])
-                self.is_hit = False
-            self.last_beat_int = curr_beat_int
+            # Chuẩn hóa theo chiều rộng mặt
+            face_width = dist(33, 263)
+            if face_width == 0: return "neutral"
 
-        # AI Detect
-        if MEDIAPIPE_AVAILABLE:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.detector.face_mesh.process(rgb)
-            if results.multi_face_landmarks:
-                lms = results.multi_face_landmarks[0]
-                self.player_emo = self.detector.predict(lms, w, h)
+            mouth_open = dist(13, 14) / face_width
+            mouth_wide = dist(61, 291) / face_width
+            brow_lift = dist(65, 159) / face_width
+            
+            # --- LOGIC NHẬN DIỆN ---
+            # 1. Happy: Miệng rộng > 0.55
+            if mouth_wide > 0.55:
+                emotion = "happy"
+            
+            # 2. Surprise: Miệng mở > 0.15 VÀ Lông mày cao > 0.19
+            elif mouth_open > 0.15 and brow_lift > 0.19:
+                emotion = "surprise"
                 
-                # Vẽ điểm môi và mắt để người chơi biết AI đang hoạt động
-                for idx in [13, 14, 61, 291, 159, 386]:
-                    p = lms.landmark[idx]
-                    cv2.circle(frame, (int(p.x*w), int(p.y*h)), 2, (0, 255, 0), -1)
+            # 3. Tongue Out: Miệng mở > 0.15 NHƯNG Lông mày thấp (<= 0.19)
+            elif mouth_open > 0.15 and brow_lift <= 0.19:
+                emotion = "tongue_out"
+                
+        self.history.append(emotion)
+        final_emotion = Counter(self.history).most_common(1)[0][0]
+        return final_emotion
 
-        # Hit Logic (Kiểm tra xem người chơi làm đúng biểu cảm ở nhịp 4 không)
-        dist_to_beat = min(beat_prog, abs(4 - beat_prog))
-        if dist_to_beat < 0.5 and not self.is_hit:
-            if self.player_emo == self.curr_target and self.curr_target != "neutral":
-                self.score += 10 + self.combo
-                self.combo += 1
-                self.feedback = "PERFECT!"
-                self.feedback_time = time.time()
-                self.is_hit = True
+# --- CAMERA LOOP ---
+def camera_loop():
+    global outputFrame, current_emotion
+    # Try to initialize the detector; if MediaPipe isn't available, disable camera loop
+    try:
+        detector = EmotionDetector()
+    except Exception as e:
+        print("Camera loop disabled: could not initialize EmotionDetector:", e)
+        return
+    cap = cv2.VideoCapture(1)
+    if not cap.isOpened(): cap = cv2.VideoCapture(0)
 
-        # HUD đơn giản trên camera
-        cv2.rectangle(frame, (50, h-30), (int(50 + (beat_prog/4)*(w-100)), h-10), (0, 255, 0), -1)
-        return frame
+    while True:
+        success, frame = cap.read()
+        if success:
+            frame = cv2.flip(frame, 1)
+            # Nhận diện
+            emo = detector.predict(frame)
+            
+            # Vẽ chữ DEBUG lên hình để bạn kiểm tra
+            cv2.putText(frame, f"AI: {emo}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            
+            with lock:
+                outputFrame = frame.copy()
+                current_emotion = emo
+        else:
+            time.sleep(0.1)
 
-game = RhythmGame()
+t = threading.Thread(target=camera_loop, daemon=True)
+t.start()
 
-# --- ROUTES ---
+# --- WEB SERVER ---
 @app.route('/')
 def index(): return render_template('index.html')
 
 @app.route('/assets/<path:filename>')
-def assets(filename): return send_from_directory('assets', filename)
+def assets(filename):
+    from flask import send_from_directory
+    # Serve generated audio from the project's `assets/` folder
+    # (previously pointed to 'static/sounds' which doesn't contain the generated files)
+    return send_from_directory('assets', filename)
 
-@app.route('/get_emotion')
-def get_emotion(): return jsonify({"emotion": game.player_emo})
-
-@app.route('/game_data')
-def game_data():
-    return jsonify({
-        "score": game.score,
-        "combo": game.combo,
-        "target": game.curr_target,
-        "next": game.next_target,
-        "player_emo": game.player_emo,
-        "feedback": game.feedback if time.time() - game.feedback_time < 0.8 else ""
-    })
-
-def gen_frames():
-    # Thử ID 1 trước cho máy bạn, nếu không được tự về 0
-    cap = cv2.VideoCapture(1)
-    if not cap.isOpened(): cap = cv2.VideoCapture(0)
-    
+def generate():
     while True:
-        success, frame = cap.read()
-        if not success: break
-        frame = game.process(frame)
-        _, buffer = cv2.imencode('.jpg', frame)
-        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        with lock:
+            if outputFrame is None:
+                time.sleep(0.01)
+                continue
+            (flag, encodedImage) = cv2.imencode(".jpg", outputFrame)
+        yield(b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
+        time.sleep(0.03)
 
 @app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+def video_feed(): return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/get_emotion')
+def get_emotion(): return jsonify({"emotion": current_emotion})
 
 if __name__ == "__main__":
-    app.run(port=5001, debug=False)
+    # Run without the debug reloader to avoid interference with background
+    # camera threads and to provide a stable single-process server.
+    app.run(port=5001, debug=False, threaded=True)

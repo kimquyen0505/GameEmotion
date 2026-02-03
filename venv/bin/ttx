@@ -1,4 +1,4 @@
-#!/Users/kimquyen/EmotionGame/venv/bin/python3
+#!/Users/kimquyen/EmotionGame/venv/bin/python3.10
 # -*- coding: utf-8 -*-
 import re
 import sys
