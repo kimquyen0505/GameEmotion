@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Siêu Sao Cảm Xúc - Kids Game</title>
+    <title>Game Cảm Xúc Vui Nhộn</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -23,256 +23,153 @@
                 <div class="label">MẠNG ❤️</div>
                 <div id="lives" class="value">❤️❤️❤️</div>
             </div>
-            <!-- Nút bật/tắt nhạc nền -->
             <div class="panel-box music-control" onclick="toggleBGM()">
                 <div class="label">NHẠC NỀN 🎵</div>
-                <div id="bgm-status" class="value" style="font-size: 20px">BẬT</div>
-            </div>
-            <div class="panel-box voice-control" onclick="toggleVoice()">
-                <div class="label">HIỆU ỨNG 🔊</div>
-                <div id="voice-status" class="value" style="font-size: 18px">BẬT</div>
-            </div>
-            <div class="panel-box voice-mode" onclick="toggleRecorded()">
-                <div class="label">CHẾ ĐỘ 🎵</div>
-                <div id="voice-mode-status" class="value" style="font-size: 16px">HIỆU ỨNG</div>
+                <div id="bgm-status" class="value">BẬT</div>
             </div>
         </div>
 
-        <!-- TV SCREEN -->
+        <!-- MÀN HÌNH GAME -->
         <div class="tv-screen">
             <img src="{{ url_for('video_feed') }}" class="video-feed">
-            
-            <div id="top-msg" class="overlay-top">SẴN SÀNG...</div>
+            <div id="top-msg" class="overlay-top">CHỜ MỘT CHÚT...</div>
 
             <div id="target-emoji" class="emoji-card hidden">
-                <div id="target-icon">😃</div>
+                <div id="target-icon">😁</div>
                 <div id="target-label">VUI VẺ</div>
             </div>
 
-            <div id="result-popup" class="result-pop hidden">TUYỆT VỜI!</div>
-
-            <div class="beat-container">
-                <div id="beat-bar" class="beat-bar"></div>
-            </div>
+            <div id="result-popup" class="result-pop hidden">ĐÚNG!</div>
+            <div class="beat-container"><div id="beat-bar" class="beat-bar"></div></div>
         </div>
 
-        <!-- CONTROLS -->
+        <!-- CONTROL -->
         <div class="bottom-panel">
-            <button id="start-btn" onclick="initGame()">▶ BẮT ĐẦU QUẨY</button>
-            <div class="ai-status">AI Đang Thấy: <span id="player-emo">...</span></div>
+            <button id="start-btn" onclick="initGame()" disabled style="background:#95a5a6; cursor:not-allowed;">⏳ ĐANG HỌC KHUÔN MẶT...</button>
+            <div class="ai-status">AI thấy: <span id="player-emo" style="color:yellow; font-weight:bold;">...</span></div>
         </div>
     </div>
 
     <script>
-        // --- 1. CẤU HÌNH ÂM THANH TÙY CHỈNH ---
-        // Load các file nhạc từ thư mục assets
+        // Cấu hình Âm thanh (nếu không có file vẫn chạy êm ru)
         const sounds = {
             bgm: new Audio("{{ url_for('assets', filename='bgm.wav') }}"),
-            beat: new Audio("{{ url_for('assets', filename='beat.wav') }}"),
             correct: new Audio("{{ url_for('assets', filename='correct.wav') }}"),
             wrong: new Audio("{{ url_for('assets', filename='wrong.wav') }}"),
-            success: new Audio("{{ url_for('assets', filename='success.wav') }}"),
-            cue: new Audio("{{ url_for('assets', filename='cue.wav') }}")
         };
+        sounds.bgm.loop = true; sounds.bgm.volume = 0.3;
 
-        // Cấu hình nhạc nền
-        sounds.bgm.loop = true; // Tự động lặp lại
-        sounds.bgm.volume = 0.35; // Âm lượng nền (35%)
-        
-        // Tinh chỉnh hiệu ứng
-        sounds.beat.volume = 0.7;
-        sounds.correct.volume = 0.8;
-        sounds.wrong.volume = 0.7;
-        sounds.success.volume = 0.9;
-        sounds.cue.volume = 0.8;
-
-        // Hàm phát âm thanh (để không bị lỗi khi bấm nhanh)
-        function playSfx(name) {
-            let s = sounds[name];
-            if (s) {
-                s.currentTime = 0; // Tua về đầu để phát ngay lập tức
-                s.play().catch(e => console.log("Chưa bấm Start nên chưa có tiếng"));
-            }
-        }
-
+        function playSound(key) { try { sounds[key].currentTime=0; sounds[key].play().catch(e=>{}); } catch(e){} }
         function toggleBGM() {
-            if (sounds.bgm.paused) {
-                sounds.bgm.play();
-                document.getElementById('bgm-status').innerText = "BẬT";
-                document.getElementById('bgm-status').style.color = "#2ecc71";
-            } else {
-                sounds.bgm.pause();
-                document.getElementById('bgm-status').innerText = "TẮT";
-                document.getElementById('bgm-status').style.color = "#e74c3c";
-            }
+            if(sounds.bgm.paused) { playSound('bgm'); document.getElementById('bgm-status').innerText="BẬT"; }
+            else { sounds.bgm.pause(); document.getElementById('bgm-status').innerText="TẮT"; }
         }
 
-        // --- SOUND EFFECTS MODE (uses upbeat game music, no voice) ---
-        let soundEnabled = true;
-
-        function toggleVoice() {
-            soundEnabled = !soundEnabled;
-            const el = document.getElementById('voice-status');
-            if (soundEnabled) { el.innerText = 'BẬT'; el.style.color = '#2ecc71'; }
-            else { el.innerText = 'TẮT'; el.style.color = '#e74c3c'; }
-        }
-
-        function toggleRecorded() {
-            // Kept for UI compatibility - switches between all effects or quiet mode
-            const el = document.getElementById('voice-mode-status');
-            const isFx = el.innerText === 'HIỆU ỨNG';
-            el.innerText = isFx ? 'IM' : 'HIỆU ỨNG';
-            el.style.color = isFx ? '#e74c3c' : '#2ecc71';
-        }
-
-        function playSfxCue(type) {
-            if (!soundEnabled) return;
-            // Map cue types to sound effects
-            const soundMap = {
-                'prompt': 'cue',
-                'correct': 'correct',
-                'wrong': 'wrong',
-                'gameover': 'success'
-            };
-            const key = soundMap[type] || type;
-            const audio = sounds[key];
-            if (audio) {
-                audio.currentTime = 0;
-                audio.play().catch(e=>console.log('play cue failed',e));
-            }
-        }
-
-        // --- 2. LOGIC GAME ---
-        let score = 0, combo = 0, lives = 3, bpm = 85; // BPM cho trẻ em
         let isPlaying = false;
+        let score = 0, combo = 0, lives = 3, bpm = 80;
         let targetEmo = "neutral";
         let playerEmo = "neutral";
-        
-        const emotions = ["happy", "surprise", "tongue_out", "neutral"];
-        const emoMap = {"happy":"VUI VẺ 😊", "surprise":"BẤT NGỜ 😲", "tongue_out":"LÈ LƯỠI 😝", "neutral":"BÌNH THƯỜNG 😐"};
-        
-        let beatCount = 0;
-        let gameTimer = null;
+        let beatCount = 0, gameTimer = null;
+
+        const emotions = ["happy", "surprise", "angry", "neutral"];
+        const emoMap = {
+            "happy": {t:"VUI VẺ 😊", i:"😁"},
+            "surprise": {t:"BẤT NGỜ 😲", i:"😲"},
+            "angry": {t:"TỨC GIẬN 😡", i:"😡"},
+            "neutral": {t:"BÌNH THƯỜNG 😐", i:"😐"}
+        };
+
+        // --- CHECK LIÊN TỤC TRẠNG THÁI HỆ THỐNG ---
+        let systemCheck = setInterval(() => {
+            fetch('/get_emotion').then(r=>r.json()).then(d => {
+                playerEmo = d.emotion;
+                let info = emoMap[playerEmo] || {t:"..."};
+                document.getElementById('player-emo').innerText = info.t;
+                
+                // Khi Python học xong mặt -> Chuyển sang running
+                if (d.state === "running") {
+                    let btn = document.getElementById('start-btn');
+                    if (btn.disabled && !isPlaying) {
+                        btn.disabled = false;
+                        btn.style.background = "#ff4757";
+                        btn.style.cursor = "pointer";
+                        btn.innerText = "▶ BẮT ĐẦU QUẨY";
+                        document.getElementById('top-msg').innerText = "ĐÃ SẴN SÀNG!";
+                        clearInterval(systemCheck); // Ngừng check
+                        startEmotionUpdate(); // Chỉ update cảm xúc thôi
+                    }
+                }
+            });
+        }, 150);
+
+        function startEmotionUpdate() {
+            setInterval(()=>{
+                fetch('/get_emotion').then(r=>r.json()).then(d=>{
+                    playerEmo = d.emotion;
+                    let info = emoMap[playerEmo];
+                    document.getElementById('player-emo').innerText = info ? info.t : "...";
+                });
+            }, 100);
+        }
 
         function gameLoop() {
-            if (!isPlaying) return;
-            
+            if(!isPlaying) return;
             let phase = beatCount % 4;
-            updateUIPhase(phase);
+            let bar = document.getElementById('beat-bar');
+            let msg = document.getElementById('top-msg');
+            let card = document.getElementById('target-emoji');
             
-            // --- XỬ LÝ ÂM THANH THEO NHỊP ---
-            if (phase === 0) {
-                // Nhịp 4: CHỐT (BÙM!)
-                // Nếu bạn có file beat.mp3 nghe "Chát" thì rất hay
-                playSfx('beat'); 
-            } else {
-                // Nhịp 1, 2, 3: (Tách tách tách)
-                // Có thể dùng lại beat.mp3 nhưng volume nhỏ hoặc file tick.mp3 riêng
-                // playSfx('tick'); // Bỏ comment nếu muốn nghe tiếng đếm nhịp
-            }
+            // Thanh thời gian
+            bar.style.transition = 'none'; bar.style.width = '100%';
+            setTimeout(()=>{ bar.style.transition=`width ${(60/bpm)*0.9}s linear`; bar.style.width='0%'; },20);
 
-            // Tính toán thời gian cho nhịp tiếp theo dựa trên BPM
-            // Công thức: 60000ms / BPM = số ms cho 1 nhịp
-            let interval = (60000 / bpm);
-            
-            gameTimer = setTimeout(gameLoop, interval);
+            if(phase===1) {
+                targetEmo = emotions[Math.floor(Math.random()*emotions.length)];
+                msg.innerText = "CHUẨN BỊ...";
+                card.classList.add('hidden');
+                document.getElementById('result-popup').classList.add('hidden');
+            } else if(phase===2) {
+                let d = emoMap[targetEmo];
+                msg.innerText = d.t;
+                document.getElementById('target-icon').innerText = d.i;
+                document.getElementById('target-label').innerText = d.t;
+                card.classList.remove('hidden');
+            } else if(phase===0) {
+                let res = document.getElementById('result-popup');
+                if (playerEmo === targetEmo) {
+                    score += 10 + combo; combo++;
+                    res.innerText = "TUYỆT VỜI! ⭐"; res.className="result-pop win";
+                    playSound('correct');
+                    if(combo%5===0) bpm+=5;
+                } else {
+                    lives--; combo=0;
+                    res.innerText = "SAI RỒI! ❌"; res.className="result-pop lose";
+                    playSound('wrong');
+                    if(lives<=0) {
+                        isPlaying=false;
+                        clearTimeout(gameTimer);
+                        sounds.bgm.pause();
+                        msg.innerText="GAME OVER"; res.innerText="HẾT GIỜ!";
+                        let btn = document.getElementById('start-btn');
+                        btn.innerText="CHƠI LẠI?"; btn.style.display="block";
+                    }
+                }
+                res.classList.remove('hidden');
+                document.getElementById('score').innerText = score;
+                document.getElementById('combo').innerText = combo;
+                document.getElementById('lives').innerText = lives>0 ? "❤️".repeat(lives) : "💔";
+            }
+            gameTimer = setTimeout(gameLoop, 60000/bpm);
             beatCount++;
         }
 
-        function updateUIPhase(phase) {
-            let msg = document.getElementById('top-msg');
-            let emoCard = document.getElementById('target-emoji');
-            let bar = document.getElementById('beat-bar');
-            
-            // Reset thanh beat
-            bar.style.transition = 'none'; bar.style.width = '100%';
-            setTimeout(() => { 
-                bar.style.transition = `width ${(60/bpm)*0.9}s linear`; 
-                bar.style.width = '0%'; 
-            }, 20);
-
-            if (phase === 1) {
-                targetEmo = emotions[Math.floor(Math.random() * emotions.length)];
-                msg.innerText = "CHỦ ĐỀ LÀ..."; msg.style.color = "#fff";
-                emoCard.classList.add('hidden');
-                document.getElementById('result-popup').classList.add('hidden');
-            }
-            else if (phase === 2) {
-                msg.innerText = emoMap[targetEmo]; msg.style.color = "#f1c40f";
-                document.getElementById('target-icon').innerText = targetEmo === "happy" ? "😁" : (targetEmo==="surprise"?"😲":(targetEmo==="tongue_out"?"😝":"😐"));
-                document.getElementById('target-label').innerText = emoMap[targetEmo];
-                emoCard.classList.remove('hidden');
-                // small animation cue and sound effect
-                emoCard.classList.add('animate-target');
-                setTimeout(()=> emoCard.classList.remove('animate-target'), 900);
-                playSfxCue('prompt');
-            }
-            else if (phase === 3) {
-                msg.innerText = "CHUẨN BỊ...";
-            }
-            else if (phase === 0) {
-                checkWin();
-            }
-        }
-
-        function checkWin() {
-            let result = document.getElementById('result-popup');
-            let correct = (playerEmo === targetEmo);
-            if(targetEmo === "neutral" && playerEmo !== "neutral") correct = false;
-
-            if (correct) {
-                score += 10 + combo; combo++;
-                result.innerText = "TUYỆT VỜI! ⭐"; result.className = "result-pop win";
-                playSfx('correct');
-                playSfxCue('correct');
-                if(combo % 5 === 0) bpm += 5; 
-            } else {
-                combo = 0; lives--;
-                result.innerText = "SAI RỒI! ❌"; result.className = "result-pop lose";
-                playSfx('wrong');
-                playSfxCue('wrong');
-                if (lives <= 0) gameOver();
-            }
-            result.classList.remove('hidden');
-            updateStats();
-        }
-
-        function updateStats() {
-            document.getElementById('score').innerText = score;
-            document.getElementById('combo').innerText = combo;
-            document.getElementById('lives').innerText = "❤️".repeat(lives);
-        }
-
-        function gameOver() {
-            isPlaying = false;
-            clearTimeout(gameTimer);
-            sounds.bgm.pause(); // Tắt nhạc nền
-            document.getElementById('top-msg').innerText = "HẾT GIỜ!";
-            document.getElementById('result-popup').innerText = "GAME OVER";
-            document.getElementById('start-btn').style.display = 'block';
-            document.getElementById('start-btn').innerText = "CHƠI LẠI?";
-            playSfxCue('gameover');
-        }
-
         function initGame() {
-            // Phải có tương tác người dùng mới phát nhạc được
-            playSfx('bgm'); 
-            
-            score = 0; combo = 0; lives = 3; bpm = 85; beatCount = 1;
-            isPlaying = true;
-            document.getElementById('start-btn').style.display = 'none';
-            updateStats();
+            playSound('bgm');
+            score=0; combo=0; lives=3; bpm=80; beatCount=1;
+            isPlaying=true;
+            document.getElementById('start-btn').style.display='none';
             gameLoop();
         }
-
-        
-        // Cập nhật AI liên tục
-        setInterval(() => {
-            fetch('/get_emotion').then(r => r.json()).then(d => {
-                playerEmo = d.emotion;
-                document.getElementById('player-emo').innerText = emoMap[playerEmo] || "...";
-            });
-        }, 100);
     </script>
 </body>
 </html>
