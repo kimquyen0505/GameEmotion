@@ -2,8 +2,9 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Game Cảm Xúc Vui Nhộn</title>
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;700&display=swap&subset=vietnamese" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -93,7 +94,7 @@
                         btn.disabled = false;
                         btn.style.background = "#ff4757";
                         btn.style.cursor = "pointer";
-                        btn.innerText = "▶ BẮT ĐẦU QUẨY";
+                        btn.innerText = "▶ BẮT ĐẦU CHƠI!";
                         document.getElementById('top-msg').innerText = "ĐÃ SẴN SÀNG!";
                         clearInterval(systemCheck); // Ngừng check
                         startEmotionUpdate(); // Chỉ update cảm xúc thôi
@@ -149,7 +150,7 @@
                         isPlaying=false;
                         clearTimeout(gameTimer);
                         sounds.bgm.pause();
-                        msg.innerText="GAME OVER"; res.innerText="HẾT GIỜ!";
+                        msg.innerText="GAME OVER";
                         let btn = document.getElementById('start-btn');
                         btn.innerText="CHƠI LẠI?"; btn.style.display="block";
                     }
